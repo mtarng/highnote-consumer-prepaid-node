@@ -22,7 +22,7 @@ import { LoadingSpinner } from "../components/LoadingSpinner";
 import { ErrorMessage } from "../components/ErrorMessage";
 import { EmptyState } from "../components/EmptyState";
 
-type ApplyStep = "select" | "applying" | "document_upload" | "approved" | "issuing" | "done" | "processing";
+type ApplyStep = "select" | "applying" | "document_upload" | "document_submitted" | "approved" | "issuing" | "done" | "processing";
 
 const WORKFLOW_LABELS: Record<string, string> = {
   IDENTITY: "Identity Verification",
@@ -268,13 +268,13 @@ export function ApplyPage() {
           setDocumentUploading(false);
         },
         onSuccess: () => {
-          // Clean up the iframe and resume polling
+          // Clean up the iframe and show an explicit confirmation step.
+          // The SDK widget otherwise just resets, leaving no sign the upload worked.
           if (documentUploadRef.current) {
             documentUploadRef.current.unmount();
             documentUploadRef.current = null;
           }
-          setStep("applying");
-          pollApplication(appId);
+          setStep("document_submitted");
         },
       });
 
@@ -584,6 +584,41 @@ export function ApplyPage() {
                   Documents are encrypted and transmitted securely
                 </div>
               </div>
+            </div>
+          </div>
+        )}
+
+        {step === "document_submitted" && (
+          <div className="mx-auto max-w-md rounded-lg border border-gray-200 bg-white p-8 shadow-sm text-center">
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-green-100">
+              <svg className="h-6 w-6 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+              </svg>
+            </div>
+            <h3 className="mt-3 text-lg font-medium text-gray-900">Document Submitted</h3>
+            <p className="mt-1 text-sm text-gray-500">
+              Your document was uploaded successfully. Your application is back under review —
+              this usually takes a moment.
+            </p>
+            <div className="mt-5 flex flex-col gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  if (!application?.id) return;
+                  setStep("applying");
+                  pollApplication(application.id);
+                }}
+                className="w-full rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
+              >
+                Check application status
+              </button>
+              <button
+                type="button"
+                onClick={() => navigate("/")}
+                className="w-full rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+              >
+                Back to dashboard
+              </button>
             </div>
           </div>
         )}

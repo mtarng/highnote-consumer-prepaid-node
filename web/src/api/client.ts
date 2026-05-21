@@ -50,19 +50,28 @@ export async function request<T>(
   });
 
   if (!response.ok) {
-    // Auto-logout on 401 — stale token after server restart, etc.
+    // Auto-logout on 401 — stale/expired token. Signal the reason so the login
+    // page can explain what happened instead of redirecting silently.
     if (response.status === 401 && !path.startsWith("/api/auth")) {
       localStorage.removeItem("auth_token");
       localStorage.removeItem("auth_user");
-      window.location.href = "/login";
+      if (!window.location.pathname.startsWith("/login")) {
+        window.location.href = "/login?reason=session-expired";
+      }
       throw new ApiRequestError("Session expired", 401);
     }
 
-    let errorMessage = `Request failed with status ${response.status}`;
+    let errorMessage =
+      response.status === 429
+        ? "Too many requests — please retry in a moment."
+        : `Request failed with status ${response.status}`;
     try {
       const errorBody = (await response.json()) as ApiError;
       const headline = errorBody.error || errorBody.message || errorMessage;
-      if (errorBody.fieldErrors?.length) {
+      if (response.status === 429) {
+        // Rate limits get a friendly, actionable message rather than a raw error code.
+        errorMessage = errorBody.message || errorMessage;
+      } else if (errorBody.fieldErrors?.length) {
         const details = errorBody.fieldErrors
           .map((fe) => `${fe.code}: ${fe.description}`)
           .join("\n");

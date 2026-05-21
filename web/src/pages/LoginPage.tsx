@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useEnvironment } from "../context/EnvironmentContext";
 import { ErrorMessage } from "../components/ErrorMessage";
@@ -7,12 +7,15 @@ import { ErrorMessage } from "../components/ErrorMessage";
 export function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [isSignUp, setIsSignUp] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const { login, signup } = useAuth();
   const { isTestEnv } = useEnvironment();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  // Sign-up vs sign-in lives in the URL so the mode is shareable and survives Back.
+  const isSignUp = searchParams.get("mode") === "signup";
+  const sessionExpired = !isSignUp && searchParams.get("reason") === "session-expired";
 
   const [passwordError, setPasswordError] = useState<string | null>(null);
 
@@ -68,6 +71,12 @@ export function LoginPage() {
           <p className="mb-6 text-center text-sm font-medium text-gray-700">
             {isSignUp ? "Create Account" : "Sign In"}
           </p>
+
+          {sessionExpired && !error && (
+            <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+              Your session expired. Please sign in again to continue.
+            </div>
+          )}
 
           {error && (
             <div className="mb-4">
@@ -137,8 +146,9 @@ export function LoginPage() {
           <div className="mt-4 text-center">
             <button
               onClick={() => {
-                setIsSignUp(!isSignUp);
+                setSearchParams(isSignUp ? {} : { mode: "signup" });
                 setError(null);
+                setPasswordError(null);
               }}
               className="text-sm text-indigo-600 hover:text-indigo-500"
             >

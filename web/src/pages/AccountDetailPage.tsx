@@ -135,9 +135,20 @@ export function AccountDetailPage() {
 
   const externalAccounts = meData?.accountHolder?.externalFinancialAccounts?.edges?.map((e) => e.node) ?? [];
 
+  // Card issuance requires a passed identity verification. Only block when we
+  // positively know verification has NOT passed — if no verification info is
+  // present, defer to the API rather than risk a false negative.
+  const verificationStatuses = (meData?.accountHolder?.cardProductApplications?.edges ?? [])
+    .map((e) => e.node.accountHolderSnapshot?.currentVerification?.status)
+    .filter((s): s is string => !!s);
+  const canIssueCard =
+    verificationStatuses.length === 0 || verificationStatuses.includes("PASSED");
+
   const {
     data: activities,
     isLoading: txLoading,
+    error: activitiesError,
+    refetch: refetchActivities,
   } = useQuery({
     queryKey: ["activities", id, activityPageSize],
     queryFn: () => listActivities(id!, activityPageSize),
@@ -194,8 +205,13 @@ export function AccountDetailPage() {
     });
   }, [serverCards.map(c => c.id).join(',')]);
 
+  // Invalidate every account-scoped query so balance, activity, transfers and
+  // wire history all refresh after a mutation — not just the account itself.
   function invalidateAccount() {
     void queryClient.invalidateQueries({ queryKey: ["me"] });
+    void queryClient.invalidateQueries({ queryKey: ["activities"] });
+    void queryClient.invalidateQueries({ queryKey: ["scheduled-transfers"] });
+    void queryClient.invalidateQueries({ queryKey: ["wire-transfers"] });
   }
 
   const issueCardMutation = useMutation({
@@ -587,13 +603,21 @@ export function AccountDetailPage() {
             {cards.every((c) => c.status === "CLOSED") && account?.accountStatus !== "CLOSED" && (
               <button
                 onClick={() => issueCardMutation.mutate()}
-                disabled={issueCardMutation.isPending}
-                className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+                disabled={issueCardMutation.isPending || !canIssueCard}
+                title={canIssueCard ? undefined : "Identity verification must be completed first"}
+                className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {issueCardMutation.isPending ? "Issuing..." : "Issue New Card"}
               </button>
             )}
           </div>
+
+          {cards.every((c) => c.status === "CLOSED") && account?.accountStatus !== "CLOSED" && !canIssueCard && (
+            <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-xs text-amber-700">
+              Identity verification hasn't passed yet — a card can't be issued until it does.
+              {isTestEnv && " Use the Simulation console to set the verification status to PASSED."}
+            </div>
+          )}
 
           {cards.length === 0 && (
             <EmptyState message="No cards issued for this account." />
@@ -1434,6 +1458,24 @@ export function AccountDetailPage() {
 
           {txLoading && <LoadingSpinner message="Loading activity..." />}
 
+          {activitiesError && (!activities || activities.length === 0) && !txLoading && (
+            <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-red-200 bg-red-50/40 py-12 px-6 text-center">
+              <svg className="h-12 w-12 text-red-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <p className="mt-4 text-sm font-medium text-gray-700">Couldn't load activity</p>
+              <p className="mt-1 text-xs text-gray-500">
+                {activitiesError instanceof Error ? activitiesError.message : "Something went wrong."}
+              </p>
+              <button
+                onClick={() => void refetchActivities()}
+                className="mt-4 rounded-md bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-indigo-700"
+              >
+                Retry
+              </button>
+            </div>
+          )}
+
           {activities && activities.length > 0 && (
             <div className="flex items-center gap-3 mb-4">
               <input
@@ -1456,7 +1498,7 @@ export function AccountDetailPage() {
             </div>
           )}
 
-          {activities && activities.length === 0 && (
+          {activities && activities.length === 0 && !activitiesError && (
             <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-gray-300 py-12 px-6">
               <svg className="h-12 w-12 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />

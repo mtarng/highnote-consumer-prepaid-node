@@ -1,5 +1,5 @@
 import "dotenv/config";
-import Fastify from "fastify";
+import Fastify, { type FastifyError } from "fastify";
 import {
   serializerCompiler,
   validatorCompiler,
@@ -43,6 +43,48 @@ await app.register(fastifyRawBody, { field: "rawBody", encoding: "utf8", runFirs
 // Zod validation & serialization
 app.setValidatorCompiler(validatorCompiler);
 app.setSerializerCompiler(serializerCompiler);
+
+// Detect a Highnote/GraphQL rate-limit error. The SDK surfaces these as a raw
+// graphql-request ClientError (no typed error class), so without this they would
+// fall through to a generic HTTP 500.
+function isRateLimitError(err: any): boolean {
+  if (err?.response?.status === 429) return true;
+  // Fallback for SDK errors that don't surface the HTTP status — match
+  // Highnote's specific rate-limit phrasing, not the generic words "rate limit".
+  const message = String(err?.message ?? "");
+  return /usage limit exceeded|request complexity points/i.test(message);
+}
+
+function rateLimitRetryAfter(err: any): number {
+  const raw = err?.response?.extensions?.rateLimit?.retryAfter;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.ceil(parsed) : 10;
+}
+
+// Global error handler — translates upstream rate limits into a real 429 with a
+// Retry-After header instead of leaking them to the client as a 500.
+app.setErrorHandler((error: FastifyError, request, reply) => {
+  if (isRateLimitError(error)) {
+    const retryAfter = rateLimitRetryAfter(error);
+    return reply
+      .status(429)
+      .header("Retry-After", String(retryAfter))
+      .send({
+        error: "Rate limited",
+        message: "The Highnote API rate limit was reached. Please retry shortly.",
+        retryAfter,
+      });
+  }
+  const statusCode = error.statusCode && error.statusCode >= 400 ? error.statusCode : 500;
+  // Server faults are error-level; client faults (validation, etc.) are warn-level noise.
+  if (statusCode >= 500) request.log.error(error);
+  else request.log.warn(error);
+  return reply.status(statusCode).send({
+    error: error.name || "Error",
+    message: error.message,
+    ...(error.validation ? { fieldErrors: error.validation } : {}),
+  });
+});
 
 // OpenAPI spec generation
 await app.register(fastifySwagger, {

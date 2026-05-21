@@ -103,7 +103,8 @@ export function SimulatePage() {
 
   function invalidate() {
     void queryClient.invalidateQueries({ queryKey: ["me"] });
-    void queryClient.invalidateQueries({ queryKey: ["transactions"] });
+    void queryClient.invalidateQueries({ queryKey: ["activities"] });
+    void queryClient.invalidateQueries({ queryKey: ["scheduled-transfers"] });
   }
 
   async function runAction(fn: () => Promise<any>) {
@@ -194,6 +195,7 @@ export function SimulatePage() {
           {activeTab === "applications" && (
             <ApplicationsTab
               applications={applications}
+              accountHolderId={meData?.accountHolder?.id}
               runAction={runAction}
               result={result}
               error={error}
@@ -604,6 +606,7 @@ function DepositsTab({
 
 function ApplicationsTab({
   applications,
+  accountHolderId,
   runAction,
   result,
   error,
@@ -611,6 +614,7 @@ function ApplicationsTab({
   onDismissError,
 }: {
   applications: any[];
+  accountHolderId?: string;
   runAction: (fn: () => Promise<any>) => Promise<void>;
   result: any;
   error: string | null;
@@ -631,6 +635,14 @@ function ApplicationsTab({
   const [uploadMemo, setUploadMemo] = useState("");
   const [uploadApplicantId, setUploadApplicantId] = useState("");
   const [uploadDocTypes, setUploadDocTypes] = useState("");
+
+  // Pre-fill the applicant ID from the signed-in account holder once it loads —
+  // it's almost always the value the operator wants, and isn't obvious otherwise.
+  useEffect(() => {
+    if (!accountHolderId) return;
+    setApplicantId((cur) => cur || accountHolderId);
+    setUploadApplicantId((cur) => cur || accountHolderId);
+  }, [accountHolderId]);
 
   const effectiveAppId = appId || applications[0]?.id || "";
 
@@ -691,7 +703,7 @@ function ApplicationsTab({
           <input
             type="text"
             className={inputCls}
-            placeholder="applicant_..."
+            placeholder="ps_ah..."
             value={applicantId}
             onChange={(e) => setApplicantId(e.target.value)}
           />
@@ -720,7 +732,7 @@ function ApplicationsTab({
                 effectiveAppId,
                 verificationStatus
               )
-            ).then(() => setApplicantId(""))
+            )
           }
         >
           Set Verification Status
@@ -797,7 +809,7 @@ function ApplicationsTab({
           <input
             type="text"
             className={inputCls}
-            placeholder="applicant_..."
+            placeholder="ps_ah..."
             value={uploadApplicantId}
             onChange={(e) => setUploadApplicantId(e.target.value)}
           />
@@ -839,7 +851,6 @@ function ApplicationsTab({
                 uploadMemo || undefined
               )
             ).then(() => {
-              setUploadApplicantId("");
               setUploadDocTypes("");
               setUploadMemo("");
             });

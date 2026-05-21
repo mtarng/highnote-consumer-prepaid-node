@@ -31,6 +31,9 @@ export function DashboardPage() {
     queryKey: ["me"],
     queryFn: getMe,
     enabled: !!user?.accountHolderId,
+    // Always refetch when landing on the dashboard so newly approved
+    // applications and freshly provisioned accounts show up immediately.
+    refetchOnMount: "always",
     refetchInterval: Date.now() < pollUntil ? 10_000 : false,
   });
 

@@ -263,10 +263,11 @@ export function OnboardingPage() {
             {step === 0 && (
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700">
+                  <label htmlFor="onboard-given-name" className="block text-sm font-medium text-gray-700">
                     First Name *
                   </label>
                   <input
+                    id="onboard-given-name"
                     type="text"
                     required
                     value={formData.givenName}
@@ -279,10 +280,11 @@ export function OnboardingPage() {
                   )}
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700">
+                  <label htmlFor="onboard-family-name" className="block text-sm font-medium text-gray-700">
                     Last Name *
                   </label>
                   <input
+                    id="onboard-family-name"
                     type="text"
                     required
                     value={formData.familyName}
@@ -295,10 +297,11 @@ export function OnboardingPage() {
                   )}
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700">
+                  <label htmlFor="onboard-dob" className="block text-sm font-medium text-gray-700">
                     Date of Birth *
                   </label>
                   <input
+                    id="onboard-dob"
                     type="date"
                     required
                     min="1900-01-01"
@@ -318,10 +321,11 @@ export function OnboardingPage() {
             {step === 1 && (
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700">
+                  <label htmlFor="onboard-street" className="block text-sm font-medium text-gray-700">
                     Street Address *
                   </label>
                   <input
+                    id="onboard-street"
                     type="text"
                     required
                     value={formData.streetAddress}
@@ -334,10 +338,11 @@ export function OnboardingPage() {
                   )}
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700">
+                  <label htmlFor="onboard-city" className="block text-sm font-medium text-gray-700">
                     City *
                   </label>
                   <input
+                    id="onboard-city"
                     type="text"
                     required
                     value={formData.locality}
@@ -351,10 +356,11 @@ export function OnboardingPage() {
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700">
+                    <label htmlFor="onboard-region" className="block text-sm font-medium text-gray-700">
                       State *
                     </label>
                     <input
+                      id="onboard-region"
                       type="text"
                       required
                       maxLength={2}
@@ -368,10 +374,11 @@ export function OnboardingPage() {
                     )}
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700">
+                    <label htmlFor="onboard-postal" className="block text-sm font-medium text-gray-700">
                       Postal Code *
                     </label>
                     <input
+                      id="onboard-postal"
                       type="text"
                       required
                       maxLength={5}
@@ -392,10 +399,11 @@ export function OnboardingPage() {
             {step === 2 && (
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700">
+                  <label htmlFor="onboard-email" className="block text-sm font-medium text-gray-700">
                     Email
                   </label>
                   <input
+                    id="onboard-email"
                     type="email"
                     value={formData.email}
                     disabled
@@ -406,10 +414,11 @@ export function OnboardingPage() {
                   </p>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700">
+                  <label htmlFor="onboard-phone" className="block text-sm font-medium text-gray-700">
                     Phone Number
                   </label>
                   <input
+                    id="onboard-phone"
                     type="tel"
                     value={displayPhone}
                     onChange={(e) => handlePhoneChange(e.target.value)}
@@ -421,11 +430,12 @@ export function OnboardingPage() {
                   )}
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700">
+                  <label htmlFor="onboard-ssn" className="block text-sm font-medium text-gray-700">
                     Social Security Number *
                   </label>
                   <div className="relative">
                     <input
+                      id="onboard-ssn"
                       type={showSSN ? "text" : "password"}
                       required
                       value={displaySSN}
