@@ -6,8 +6,9 @@ import { highnote } from "../services/highnote.js";
 const JWT_SECRET = process.env.JWT_SECRET ?? (() => {
   if (process.env.NODE_ENV === "production") {
     throw new Error(
-      "JWT_SECRET environment variable is required in production. " +
-        "On Render this is auto-generated; set it explicitly elsewhere.",
+      "JWT_SECRET is required when NODE_ENV=production (any hosted instance " +
+        "of this demo). On Render it is auto-generated; set it explicitly on " +
+        "other hosts. See SECURITY.md for what \"production\" means here.",
     );
   }
   // Local dev: per-process random secret. Tokens invalidate on restart.
