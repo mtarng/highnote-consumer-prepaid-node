@@ -4,7 +4,7 @@ import { randomUUID } from "crypto";
 import { highnote } from "../services/highnote.js";
 import { HighnoteUserError, HighnoteAccessDeniedError } from "@highnote-oss/nodejs-sdk";
 import { InitiateAchTransferBodySchema, CreateOneTimeAchTransferBodySchema, CreateRecurringAchTransferBodySchema, CancelScheduledTransferBodySchema } from "../types.js";
-import { getUserResourceIds } from "../middleware/auth.js";
+import { getUserResourceIds, getUserAccountHolderId } from "../middleware/auth.js";
 
 function handleError(err: unknown, reply: any) {
   if (err instanceof HighnoteUserError) {
@@ -76,7 +76,7 @@ export async function achTransferRoutes(app: FastifyInstance) {
         individualName: individualName!,
         idempotencyKey: randomUUID(),
         transferAgreementConsent: {
-          authorizedPersonId: fromFinancialAccountId,
+          authorizedPersonId: getUserAccountHolderId(request),
           consentTimestamp: new Date().toISOString(),
           template: {
             consentTemplateId: "ach_transfer_consent_v1",
@@ -114,7 +114,7 @@ export async function achTransferRoutes(app: FastifyInstance) {
         },
         ...(scheduledDate ? { transferDateStrategy: { transferDate: scheduledDate } } : {}),
         transferAgreementConsent: {
-          authorizedPersonId: fromFinancialAccountId,
+          authorizedPersonId: getUserAccountHolderId(request),
           consentTimestamp: new Date().toISOString(),
           template: {
             consentTemplateId: "ach_transfer_consent_v1",
@@ -153,7 +153,7 @@ export async function achTransferRoutes(app: FastifyInstance) {
         },
         transferDayStrategy: { transferDayOfMonth: dayOfMonth },
         transferAgreementConsent: {
-          authorizedPersonId: fromFinancialAccountId,
+          authorizedPersonId: getUserAccountHolderId(request),
           consentTimestamp: new Date().toISOString(),
           template: {
             consentTemplateId: "ach_transfer_consent_v1",
