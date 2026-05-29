@@ -21,6 +21,7 @@ import { StatusBadge } from "../components/StatusBadge";
 import { LoadingSpinner } from "../components/LoadingSpinner";
 import { ErrorMessage } from "../components/ErrorMessage";
 import { EmptyState } from "../components/EmptyState";
+import { useEnvironment } from "../context/EnvironmentContext";
 
 type ApplyStep = "select" | "applying" | "document_upload" | "document_submitted" | "approved" | "issuing" | "done" | "processing";
 
@@ -34,10 +35,69 @@ const WORKFLOW_LABELS: Record<string, string> = {
   OFFER_MANAGEMENT: "Offer Management",
 };
 
+// The Highnote document-upload SDK renders option labels as the raw enum value
+// (e.g. "DRIVERS_LICENSE") suffixed with "(Recommended)" when applicable. Map
+// to friendly names; unknown enums fall back to a generic Title Case formatter.
+const DOCUMENT_TYPE_LABELS: Record<string, string> = {
+  DRIVERS_LICENSE: "Driver's License",
+  LEASE_AGREEMENT: "Lease Agreement",
+  UTILITY_BILL: "Utility Bill",
+  PASSPORT: "Passport",
+  STATE_ID: "State ID",
+};
+
+function humanizeEnumLabel(raw: string): string {
+  if (DOCUMENT_TYPE_LABELS[raw]) return DOCUMENT_TYPE_LABELS[raw];
+  // The SDK occasionally feeds the option label through its own humanizer
+  // before we see it (e.g. "utility bill" with lowercase b after the
+  // dropdown is rebuilt mid-session). Normalize the separators first so a
+  // mid-pass UPPERCASE_ENUM and an already-humanized "lowercase phrase"
+  // both end up Title Cased.
+  const normalized = raw.toLowerCase().split(/[_\s]+/).filter(Boolean);
+  return normalized.map((w) => w[0].toUpperCase() + w.slice(1)).join(" ");
+}
+
+// Sentinel value for the "Select a document type" placeholder we inject at
+// the top of the SDK dropdown. The SDK reads `select.options[selectedIndex].value`
+// when Upload is clicked — a sentinel string makes the placeholder
+// distinguishable both for the click guard below and from any real document
+// enum the SDK might add in future.
+const DOC_TYPE_PLACEHOLDER_VALUE = "__doc_type_placeholder__";
+
+function humanizeSdkLabels(root: ParentNode): void {
+  const select = root.querySelector("#document-sdk-type");
+  if (!(select instanceof HTMLSelectElement)) return;
+  for (const opt of Array.from(select.options)) {
+    if (opt.value === DOC_TYPE_PLACEHOLDER_VALUE) continue;
+    const recommended = /\(\s*recommended\s*\)/i.test(opt.text);
+    const stripped = opt.text.replace(/\s*\(\s*recommended\s*\)\s*$/i, "").trim();
+    const humanized = humanizeEnumLabel(stripped);
+    const next = recommended ? `${humanized} — Recommended` : humanized;
+    if (opt.text !== next) opt.text = next;
+  }
+}
+
+function ensureDocumentTypePlaceholder(root: ParentNode): void {
+  const select = root.querySelector("#document-sdk-type");
+  if (!(select instanceof HTMLSelectElement)) return;
+  const exists = Array.from(select.options).some(
+    (o) => o.value === DOC_TYPE_PLACEHOLDER_VALUE,
+  );
+  if (exists) return;
+  const placeholder = document.createElement("option");
+  placeholder.value = DOC_TYPE_PLACEHOLDER_VALUE;
+  placeholder.text = "Select a document type";
+  placeholder.disabled = true;
+  placeholder.hidden = true;
+  select.insertBefore(placeholder, select.firstChild);
+  placeholder.selected = true;
+}
+
 export function ApplyPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const queryClient = useQueryClient();
+  const { isTestEnv } = useEnvironment();
   const [step, setStep] = useState<ApplyStep>("select");
   const [error, setError] = useState<string | null>(null);
   const [application, setApplication] = useState<Application | null>(null);
@@ -45,6 +105,7 @@ export function ApplyPage() {
   const [selectedProduct, setSelectedProduct] = useState<CardProduct | null>(null);
   const [documentUploading, setDocumentUploading] = useState(false);
   const documentUploadRef = useRef<{ unmount: () => void; endSession: () => Promise<boolean> } | null>(null);
+  const sdkObserverRef = useRef<MutationObserver | null>(null);
   const abortRef = useRef(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -53,6 +114,8 @@ export function ApplyPage() {
     return () => {
       abortRef.current = true;
       if (timerRef.current) clearTimeout(timerRef.current);
+      sdkObserverRef.current?.disconnect();
+      sdkObserverRef.current = null;
       if (documentUploadRef.current) {
         documentUploadRef.current.unmount();
         documentUploadRef.current = null;
@@ -266,10 +329,72 @@ export function ApplyPage() {
         },
         onLoad: () => {
           setDocumentUploading(false);
+          // The SDK uses our `selector` as the mount point, so its dropdown
+          // and upload button are in our DOM. After load we (1) rewrite raw
+          // enum option labels to friendly names, (2) inject a non-selectable
+          // "Select a document type" placeholder so the user has to make a
+          // conscious choice rather than accidentally submitting whatever
+          // Highnote happened to return first, and (3) guard the Upload
+          // button against the SDK's silent no-op when the placeholder is
+          // still selected. A MutationObserver re-applies (1)+(2) if the
+          // SDK rebuilds the dropdown later.
+          const container = document.getElementById("document-upload-container");
+          if (container) {
+            // The SDK rebuilds the dropdown + Upload button after each
+            // successful upload (it replaces `innerHTML` to reflect newly
+            // satisfied document requirements). The new elements lose any
+            // listeners attached only at `onLoad`, so we run all
+            // enhancements — humanize, placeholder, click guard, change
+            // listener — on every mutation. The dataset flags make each
+            // attachment idempotent against the current element identity.
+            const enhance = () => {
+              humanizeSdkLabels(container);
+              ensureDocumentTypePlaceholder(container);
+
+              const uploadBtn = container.querySelector("#document-upload-button");
+              if (uploadBtn instanceof HTMLElement && !uploadBtn.dataset.placeholderGuard) {
+                uploadBtn.dataset.placeholderGuard = "1";
+                uploadBtn.addEventListener(
+                  "click",
+                  (e) => {
+                    const sel = container.querySelector("#document-sdk-type");
+                    if (
+                      sel instanceof HTMLSelectElement &&
+                      sel.value === DOC_TYPE_PLACEHOLDER_VALUE
+                    ) {
+                      e.preventDefault();
+                      e.stopImmediatePropagation();
+                      setError("Pick a document type before uploading.");
+                    }
+                  },
+                  true,
+                );
+              }
+
+              // Clear the placeholder error as soon as the user picks a
+              // real option — banner otherwise lingers after they've
+              // corrected the issue.
+              const select = container.querySelector("#document-sdk-type");
+              if (select instanceof HTMLSelectElement && !select.dataset.placeholderClear) {
+                select.dataset.placeholderClear = "1";
+                select.addEventListener("change", () => {
+                  if (select.value !== DOC_TYPE_PLACEHOLDER_VALUE) {
+                    setError(null);
+                  }
+                });
+              }
+            };
+            enhance();
+            const observer = new MutationObserver(enhance);
+            observer.observe(container, { childList: true, subtree: true });
+            sdkObserverRef.current = observer;
+          }
         },
         onSuccess: () => {
           // Clean up the iframe and show an explicit confirmation step.
           // The SDK widget otherwise just resets, leaving no sign the upload worked.
+          sdkObserverRef.current?.disconnect();
+          sdkObserverRef.current = null;
           if (documentUploadRef.current) {
             documentUploadRef.current.unmount();
             documentUploadRef.current = null;
@@ -322,22 +447,33 @@ export function ApplyPage() {
           </div>
         )}
 
-        {/* Verification results */}
-        {verification && (
-          <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-            <div className="mb-3 flex items-center justify-between">
-              <h4 className="text-sm font-medium text-gray-700">Identity Verification</h4>
+        {/* Verification results — TEST ENV ONLY. The per-check codes (e.g.
+            ADDRESS_MISMATCH) are operationally useful for the demo but in
+            production they tell an applicant using stolen data exactly which
+            field to forge next. Gate behind isTestEnv and frame as debug. */}
+        {isTestEnv && verification && (
+          <div className="rounded-lg border border-amber-200 bg-amber-50/50 p-4 shadow-sm">
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <h4 className="text-sm font-medium text-amber-900">Identity Verification</h4>
+                <span className="rounded bg-amber-200 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-900">
+                  Test debug
+                </span>
+              </div>
               <StatusBadge status={verification.status ?? "PENDING"} />
             </div>
+            <p className="mb-2 text-[10px] uppercase tracking-wide text-amber-700">
+              Not visible to applicants in production
+            </p>
             {verification.reason && (
-              <p className="mb-2 text-xs text-gray-500">{verification.reason}</p>
+              <p className="mb-2 text-xs text-amber-900">{verification.reason}</p>
             )}
             {verification.results && verification.results.length > 0 && (
               <div className="space-y-1">
                 {verification.results.map((r, i) => (
                   <div key={i} className="flex items-start gap-2 text-xs">
-                    <span className="font-mono text-gray-400">{r.code}</span>
-                    {r.description && <span className="text-gray-500">{r.description}</span>}
+                    <span className="font-mono text-amber-700">{r.code}</span>
+                    {r.description && <span className="text-amber-900">{r.description}</span>}
                   </div>
                 ))}
               </div>
@@ -485,10 +621,17 @@ export function ApplyPage() {
                 background: #4338ca;
                 box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
               }
-              .document-onUpload-overlay {
+              /* The SDK creates the overlay + spanner up front with their
+               * default classes, then swaps them to class="show" while an
+               * upload is in flight (see lib/esm/module.js). Style the active
+               * .show state, not the default class — otherwise the
+               * "Uploading file, please be patient" line is visible before
+               * the user has picked a file. */
+              .document-onUpload-overlay,
+              .document-onUpload-spanner {
                 display: none;
               }
-              .document-onUpload-spanner {
+              #document-upload-container .show {
                 display: flex;
                 align-items: center;
                 gap: 0.75rem;
@@ -498,7 +641,7 @@ export function ApplyPage() {
                 border-radius: 0.5rem;
                 border: 1px solid #e0e7ff;
               }
-              .document-onUpload-spanner p {
+              #document-upload-container .show p {
                 font-size: 0.8125rem;
                 color: #4338ca;
                 margin: 0;
@@ -566,6 +709,31 @@ export function ApplyPage() {
                       </span>
                     ) : "Select & Upload Documents"}
                   </button>
+                </div>
+              )}
+
+              {/* Step instructions + accepted formats (visible once SDK is mounted) */}
+              {documentUploadRef.current && (
+                <div className="border-b border-gray-100 px-6 py-3">
+                  <ol className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs font-medium text-gray-600">
+                    <li className="flex items-center gap-1.5">
+                      <span className="flex h-5 w-5 items-center justify-center rounded-full bg-indigo-100 text-[10px] font-semibold text-indigo-700">1</span>
+                      Pick document type
+                    </li>
+                    <li aria-hidden className="text-gray-300">›</li>
+                    <li className="flex items-center gap-1.5">
+                      <span className="flex h-5 w-5 items-center justify-center rounded-full bg-indigo-100 text-[10px] font-semibold text-indigo-700">2</span>
+                      Choose file
+                    </li>
+                    <li aria-hidden className="text-gray-300">›</li>
+                    <li className="flex items-center gap-1.5">
+                      <span className="flex h-5 w-5 items-center justify-center rounded-full bg-indigo-100 text-[10px] font-semibold text-indigo-700">3</span>
+                      Click Upload
+                    </li>
+                  </ol>
+                  <p className="mt-2 text-xs text-gray-400">
+                    Accepted formats: PDF, PNG, JPG (max 10 MB)
+                  </p>
                 </div>
               )}
 

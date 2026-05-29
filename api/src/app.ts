@@ -115,8 +115,17 @@ export async function buildApp(): Promise<FastifyInstance> {
         "font-src": ["'self'", "data:", "https://fonts.gstatic.com"],
         // Highnote SDK iframes (card-viewer / secure-inputs / document-upload).
         "frame-src": ["'self'", "https://*.highnote.com"],
-        // SPA → same-origin /api; Highnote SDKs → api.us[.test].highnote.com.
-        "connect-src": ["'self'", "https://*.highnote.com"],
+        // SPA → same-origin /api; Highnote SDKs → api.us[.test].highnote.com;
+        // document-upload PUTs go to a Highnote-issued GCS signed URL on
+        // storage.googleapis.com (bucket name e.g.
+        // bay1-bkt-prod-test-document-upload-to-review) — observed via the
+        // CSP block on /apply manual-review path. Pin the host narrowly
+        // rather than allowing *.googleapis.com.
+        "connect-src": [
+          "'self'",
+          "https://*.highnote.com",
+          "https://storage.googleapis.com",
+        ],
         "object-src": ["'none'"],
         "base-uri": ["'self'"],
         "form-action": ["'self'"],

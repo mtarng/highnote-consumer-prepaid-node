@@ -106,8 +106,10 @@ concern and the change you would make if you adopted the app for real users.
 - **Content-Security-Policy.** Enforced by `@fastify/helmet` with an
   allow-list covering the embedded Highnote SDKs (`*.highnote.com` for the
   card-viewer, secure-inputs, and document-upload iframes plus their XHR
-  back-channel), Leaflet basemap tiles (`*.basemaps.cartocdn.com`), and
-  Google Fonts (`fonts.googleapis.com`, `fonts.gstatic.com`).
+  back-channel), the GCS-hosted signed URLs the document-upload SDK
+  PUTs to (`storage.googleapis.com`), Leaflet basemap tiles
+  (`*.basemaps.cartocdn.com`), and Google Fonts (`fonts.googleapis.com`,
+  `fonts.gstatic.com`).
   `'unsafe-inline'` is allowed on `style-src` because Tailwind v4 injects
   utility classes as runtime `<style>` blocks; the directive can be
   tightened with hashes if you replace Tailwind. Set `CSP_REPORT_ONLY=true`
