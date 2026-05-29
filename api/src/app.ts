@@ -86,10 +86,43 @@ export async function buildApp(): Promise<FastifyInstance> {
       : (process.env.CORS_ORIGIN ?? "http://localhost:5173");
   await app.register(fastifyCors, { origin: corsOrigin });
 
-  // Security headers. CSP is intentionally disabled — a strict policy breaks the
-  // embedded Highnote SDK iframes (card viewer, secure inputs, document upload)
-  // and the Leaflet basemap tiles. A tuned CSP is a separate follow-up.
-  await app.register(fastifyHelmet, { contentSecurityPolicy: false });
+  // Security headers. The CSP allow-list is the minimum needed by the embedded
+  // Highnote SDKs (card-viewer / secure-inputs / document-upload all source
+  // iframes from cdn.highnote.com and XHR to api.us[.test].highnote.com), the
+  // Leaflet basemap tiles (*.basemaps.cartocdn.com), and Google Fonts.
+  //
+  // `*.highnote.com` is broader than the exact origins observed in the SDK
+  // (cdn., api.us., api.us.test.) but tolerates the SDK adding new
+  // subdomains in future minor releases without breaking the page. Narrow it
+  // if you'd rather pin.
+  //
+  // Set `CSP_REPORT_ONLY=true` to soak-test changes before enforcing — the
+  // browser logs violations to the console instead of blocking them. In dev
+  // (`NODE_ENV !== "production"`) the SPA is served by Vite, not this server,
+  // so the policy only matters in deployed environments.
+  const cspReportOnly = process.env.CSP_REPORT_ONLY === "true";
+  await app.register(fastifyHelmet, {
+    contentSecurityPolicy: {
+      useDefaults: true,
+      reportOnly: cspReportOnly,
+      directives: {
+        "default-src": ["'self'"],
+        "script-src": ["'self'"],
+        // Tailwind v4 injects utility classes as inline <style> blocks at
+        // runtime; without 'unsafe-inline' the page renders unstyled.
+        "style-src": ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+        "img-src": ["'self'", "data:", "https://*.basemaps.cartocdn.com"],
+        "font-src": ["'self'", "data:", "https://fonts.gstatic.com"],
+        // Highnote SDK iframes (card-viewer / secure-inputs / document-upload).
+        "frame-src": ["'self'", "https://*.highnote.com"],
+        // SPA → same-origin /api; Highnote SDKs → api.us[.test].highnote.com.
+        "connect-src": ["'self'", "https://*.highnote.com"],
+        "object-src": ["'none'"],
+        "base-uri": ["'self'"],
+        "form-action": ["'self'"],
+      },
+    },
+  });
 
   // Rate limiting — opt-in per route (see auth routes), not global, so normal
   // SPA API traffic is unaffected.
